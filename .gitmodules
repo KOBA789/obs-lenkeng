@@ -1,0 +1,3 @@
+[submodule "libobs-sys/obs-studio"]
+	path = libobs-sys/obs-studio
+	url = https://github.com/obsproject/obs-studio

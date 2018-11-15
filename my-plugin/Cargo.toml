@@ -1,0 +1,12 @@
+[package]
+name = "my-plugin"
+version = "0.1.0"
+authors = ["KOBA789 <kobahide789@gmail.com>"]
+
+[lib]
+name = "my"
+crate-type = ["cdylib"]
+
+[dependencies]
+libobs-sys = { path = "../libobs-sys" }
+rand = "0.6"
