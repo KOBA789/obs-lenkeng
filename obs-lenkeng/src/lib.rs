@@ -1,13 +1,13 @@
 extern crate libobs_sys;
-extern crate rand;
+extern crate image;
 
 use std::ptr::null;
 use std::os::raw::c_char;
 use std::mem;
 use std::ffi::{CString, c_void};
 use std::sync::mpsc;
-
-use rand::Rng;
+use std::net::UdpSocket;
+use std::net::Ipv4Addr;
 
 static mut OBS_MODULE_POINTER: Option<*mut libobs_sys::obs_module_t> = None;
 static mut SOURCE_ID: Option<CString> = None;
@@ -52,12 +52,6 @@ fn os_gettime_ns() -> u64 {
     }
 }
 
-fn os_sleepto_ns(dur: u64) {
-    unsafe {
-        libobs_sys::os_sleepto_ns(dur);
-    }
-}
-
 enum Signal {
     Shutdown,
 }
@@ -66,27 +60,58 @@ struct SourceData {
     chan: mpsc::SyncSender<Signal>,
 }
 
+const WIDTH: usize = 1920;
+const HEIGHT: usize = 1080;
+const PACKET_SIZE: usize = 1024;
+const MAX_CHUNK: usize = 1000;
+
 fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
-    let mut rng = rand::thread_rng();
-    let mut pixels = [0u32; 20 * 20];
     let nil = (null() as *const u8) as *mut u8;
+    let pixels: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut frame = libobs_sys::obs_source_frame {
         data: [pixels.as_ptr() as *mut u8, nil, nil, nil, nil, nil, nil, nil],
-        linesize: [20 * 4, 0, 0, 0, 0, 0, 0, 0],
-        width: 20,
-        height: 20,
+        linesize: [WIDTH as u32 * 4, 0, 0, 0, 0, 0, 0, 0],
+        width: WIDTH as u32,
+        height: HEIGHT as u32,
         format: libobs_sys::video_format_VIDEO_FORMAT_BGRX,
         ..libobs_sys::obs_source_frame::default()
     };
 
-    while let Err(mpsc::TryRecvError::Empty) = chan.try_recv() {
-        let cur_time = os_gettime_ns();
-        frame.timestamp = cur_time;
-        for pixel in pixels.iter_mut() {
-            *pixel = rng.gen_range(0, 0xFFFFFF);
+    let socket = UdpSocket::bind("0.0.0.0:2068").expect("failed to bind to address");
+    let membership: Ipv4Addr = "226.2.2.2".parse().unwrap();
+    let ifaddr: Ipv4Addr = "192.168.168.123".parse().unwrap();
+    socket.join_multicast_v4(&membership, &ifaddr).expect("failed to join to multicast group");
+    let mut buf: Vec<u8> = Vec::with_capacity(PACKET_SIZE * MAX_CHUNK);
+    let mut chunk_buf: Vec<u8> = vec![0; PACKET_SIZE];
+
+    loop {
+        socket.recv(&mut chunk_buf).expect("failed to read from socket");
+        //let frame_n = (chunk_buf[0] as u16) * 0xFF + chunk_buf[1] as u16;
+        let part_n = (chunk_buf[2] as u16) * 0xFF + chunk_buf[3] as u16;
+
+        if part_n == 0 {
+            buf.clear();
+            frame.timestamp = os_gettime_ns();
         }
-        source.output_video(&frame);
-        os_sleepto_ns(cur_time + 250_000_000);
+
+        buf.extend(&chunk_buf[4..]);
+
+        if part_n > 0x4000 {
+            if let Ok(_) = chan.try_recv() {
+                break;
+            }
+            let dec_ret = image::load_from_memory_with_format(&buf, image::JPEG);
+            match dec_ret {
+                Ok(img) => {
+                    let pixels = img.to_bgra().into_raw();
+                    frame.data[0] = pixels.as_ptr() as *mut u8;
+                },
+                Err(err) => {
+                    println!("{}", err);
+                }
+            }
+            source.output_video(&frame);
+        }
     }
 }
 

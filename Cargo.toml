@@ -1,5 +1,5 @@
 [workspace]
 members = [
     "libobs-sys",
-    "my-plugin",
+    "obs-lenkeng",
 ]

@@ -1,12 +1,12 @@
 [package]
-name = "my-plugin"
+name = "obs-lenkeng"
 version = "0.1.0"
 authors = ["KOBA789 <kobahide789@gmail.com>"]
 
 [lib]
-name = "my"
+name = "lenkeng"
 crate-type = ["cdylib"]
 
 [dependencies]
 libobs-sys = { path = "../libobs-sys" }
-rand = "0.6"
+image = "0.20"
