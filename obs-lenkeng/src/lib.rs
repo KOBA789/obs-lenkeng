@@ -1,7 +1,8 @@
 extern crate libobs_sys;
-extern crate image;
+extern crate libturbojpeg_sys;
 
-use image::GenericImageView;
+mod turbojpeg;
+
 use std::ptr::null;
 use std::os::raw::c_char;
 use std::mem;
@@ -68,7 +69,7 @@ const MAX_CHUNK: usize = 1000;
 
 fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
     let nil = (null() as *const u8) as *mut u8;
-    let pixels: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let mut pixels: Vec<u8> = vec![0; WIDTH * HEIGHT * 4];
     let mut frame = libobs_sys::obs_source_frame {
         data: [pixels.as_ptr() as *mut u8, nil, nil, nil, nil, nil, nil, nil],
         linesize: [WIDTH as u32 * 4, 0, 0, 0, 0, 0, 0, 0],
@@ -84,6 +85,7 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
     socket.join_multicast_v4(&membership, &ifaddr).expect("failed to join to multicast group");
     let mut buf: Vec<u8> = Vec::with_capacity(PACKET_SIZE * MAX_CHUNK);
     let mut chunk_buf: Vec<u8> = vec![0; PACKET_SIZE];
+    let mut dec = turbojpeg::Decompress::new().unwrap();
 
     loop {
         socket.recv(&mut chunk_buf).expect("failed to read from socket");
@@ -101,14 +103,13 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
             if let Ok(_) = chan.try_recv() {
                 break;
             }
-            let dec_ret = image::load_from_memory_with_format(&buf, image::JPEG);
+            let header = dec.decompress_header(&buf);
+            let dec_ret = dec.decompress(&buf, &header, pixels.as_mut_slice());
             match dec_ret {
-                Ok(img) => {
-                    let pixels = img.to_bgra().into_raw();
-                    frame.width = img.width();
-                    frame.height = img.height();
-                    frame.linesize[0] = img.width() * 4;
-                    frame.data[0] = pixels.as_ptr() as *mut u8;
+                Ok(_) => {
+                    frame.width = header.width as u32;
+                    frame.height = header.height as u32;
+                    frame.linesize[0] = header.width as u32 * 4;
                 },
                 Err(err) => {
                     println!("{}", err);

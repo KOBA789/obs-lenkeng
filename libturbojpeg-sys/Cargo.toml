@@ -1,0 +1,12 @@
+[package]
+name = "libturbojpeg-sys"
+version = "0.1.0"
+authors = ["KOBA789 <kobahide789@gmail.com>"]
+links = "turbojpeg"
+build = "build.rs"
+
+[lib]
+
+[build-dependencies]
+bindgen = "0.43"
+cmake = "0.1"

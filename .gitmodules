@@ -1,3 +1,6 @@
 [submodule "libobs-sys/obs-studio"]
 	path = libobs-sys/obs-studio
 	url = https://github.com/obsproject/obs-studio
+[submodule "libturbojpeg-sys/libjpeg-turbo"]
+	path = libturbojpeg-sys/libjpeg-turbo
+	url = https://github.com/libjpeg-turbo/libjpeg-turbo.git

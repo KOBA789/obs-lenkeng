@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libobs-sys = { path = "../libobs-sys" }
-image = "0.20"
+libturbojpeg-sys = { path = "../libturbojpeg-sys" }
