@@ -138,8 +138,8 @@ pub unsafe extern "C" fn source_destroy(data: *mut c_void) {
 #[no_mangle]
 pub unsafe extern "C" fn obs_module_load() -> bool
 {
-    SOURCE_ID = Some(CString::new("noise-source").unwrap());
-    SOURCE_NAME = Some(CString::new("NOISE SOURCE").unwrap());
+    SOURCE_ID = Some(CString::new("lenkeng").unwrap());
+    SOURCE_NAME = Some(CString::new("LENKENG").unwrap());
 
     let source_info = libobs_sys::obs_source_info {
         id: SOURCE_ID.as_ref().unwrap().as_ptr(),
