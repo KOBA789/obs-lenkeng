@@ -1,6 +1,7 @@
 extern crate libobs_sys;
 extern crate image;
 
+use image::GenericImageView;
 use std::ptr::null;
 use std::os::raw::c_char;
 use std::mem;
@@ -104,6 +105,9 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
             match dec_ret {
                 Ok(img) => {
                     let pixels = img.to_bgra().into_raw();
+                    frame.width = img.width();
+                    frame.height = img.height();
+                    frame.linesize[0] = img.width() * 4;
                     frame.data[0] = pixels.as_ptr() as *mut u8;
                 },
                 Err(err) => {
