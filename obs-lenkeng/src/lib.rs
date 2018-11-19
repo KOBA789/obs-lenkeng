@@ -6,14 +6,14 @@ mod turbojpeg;
 use std::ptr::null;
 use std::os::raw::c_char;
 use std::mem;
-use std::ffi::{CString, c_void};
+use std::ffi::c_void;
 use std::sync::mpsc;
 use std::net::UdpSocket;
 use std::net::Ipv4Addr;
 
 static mut OBS_MODULE_POINTER: Option<*mut libobs_sys::obs_module_t> = None;
-static mut SOURCE_ID: Option<CString> = None;
-static mut SOURCE_NAME: Option<CString> = None;
+const SOURCE_ID: &[u8] = b"lenkeng\0";
+const SOURCE_NAME: &[u8] = b"LENKENG\0";
 
 #[no_mangle]
 pub unsafe extern "C" fn obs_module_set_pointer(module: *mut libobs_sys::obs_module_t) -> () {
@@ -27,9 +27,8 @@ pub unsafe extern "C" fn obs_module_ver() -> u32 {
     | libobs_sys::LIBOBS_API_PATCH_VER as u32
 }
 
-pub unsafe extern "C" fn source_get_name(_data: *mut c_void) -> *const c_char
-{
-    return SOURCE_NAME.as_ref().unwrap().as_ptr();
+unsafe extern "C" fn source_get_name(_data: *mut c_void) -> *const c_char {
+    return SOURCE_NAME.as_ptr() as *const c_char;
 }
 
 #[derive(Clone, Copy)]
@@ -77,7 +76,7 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
         ..libobs_sys::obs_source_frame::default()
     };
 
-    let socket = UdpSocket::bind("0.0.0.0:2068").expect("failed to bind to address");
+    let socket = UdpSocket::bind("192.168.168.123:2068").expect("failed to bind to address");
     let membership: Ipv4Addr = "226.2.2.2".parse().unwrap();
     let ifaddr: Ipv4Addr = "192.168.168.123".parse().unwrap();
     socket.join_multicast_v4(&membership, &ifaddr).expect("failed to join to multicast group");
@@ -122,7 +121,7 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
     }
 }
 
-pub unsafe extern "C" fn source_create(_settings: *mut libobs_sys::obs_data, source: *mut libobs_sys::obs_source) -> *mut c_void {
+unsafe extern "C" fn source_create(raw_settings: *mut libobs_sys::obs_data, source: *mut libobs_sys::obs_source) -> *mut c_void {
     let send_source = SendSource(source);
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
@@ -132,7 +131,7 @@ pub unsafe extern "C" fn source_create(_settings: *mut libobs_sys::obs_data, sou
     return ptr as *mut c_void;
 }
 
-pub unsafe extern "C" fn source_destroy(data: *mut c_void) {
+unsafe extern "C" fn source_destroy(data: *mut c_void) {
     let data = Box::from_raw(data as *mut SourceData);
     data.chan.send(Signal::Shutdown).ok();
 }
@@ -140,11 +139,8 @@ pub unsafe extern "C" fn source_destroy(data: *mut c_void) {
 #[no_mangle]
 pub unsafe extern "C" fn obs_module_load() -> bool
 {
-    SOURCE_ID = Some(CString::new("lenkeng").unwrap());
-    SOURCE_NAME = Some(CString::new("LENKENG").unwrap());
-
     let source_info = libobs_sys::obs_source_info {
-        id: SOURCE_ID.as_ref().unwrap().as_ptr(),
+        id: SOURCE_ID.as_ptr() as *const c_char,
         type_: libobs_sys::obs_source_type_OBS_SOURCE_TYPE_INPUT,
         output_flags: libobs_sys::OBS_SOURCE_ASYNC_VIDEO,
         get_name: Some(source_get_name),
