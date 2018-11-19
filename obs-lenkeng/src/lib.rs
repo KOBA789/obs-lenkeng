@@ -62,19 +62,17 @@ struct SourceData {
     chan: mpsc::SyncSender<Signal>,
 }
 
-const WIDTH: usize = 1920;
-const HEIGHT: usize = 1080;
 const PACKET_SIZE: usize = 1024;
 const MAX_CHUNK: usize = 1000;
 
 fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
     let nil = (null() as *const u8) as *mut u8;
-    let mut pixels: Vec<u8> = vec![0; WIDTH * HEIGHT * 4];
+    let mut pixels = Vec::<u8>::new();
     let mut frame = libobs_sys::obs_source_frame {
         data: [pixels.as_ptr() as *mut u8, nil, nil, nil, nil, nil, nil, nil],
-        linesize: [WIDTH as u32 * 4, 0, 0, 0, 0, 0, 0, 0],
-        width: WIDTH as u32,
-        height: HEIGHT as u32,
+        linesize: [0, 0, 0, 0, 0, 0, 0, 0],
+        width: 0,
+        height: 0,
         format: libobs_sys::video_format_VIDEO_FORMAT_BGRX,
         ..libobs_sys::obs_source_frame::default()
     };
@@ -83,8 +81,8 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
     let membership: Ipv4Addr = "226.2.2.2".parse().unwrap();
     let ifaddr: Ipv4Addr = "192.168.168.123".parse().unwrap();
     socket.join_multicast_v4(&membership, &ifaddr).expect("failed to join to multicast group");
-    let mut buf: Vec<u8> = Vec::with_capacity(PACKET_SIZE * MAX_CHUNK);
-    let mut chunk_buf: Vec<u8> = vec![0; PACKET_SIZE];
+    let mut jpeg_buf = Vec::<u8>::with_capacity(PACKET_SIZE * MAX_CHUNK);
+    let mut chunk_buf = vec![0u8; PACKET_SIZE];
     let mut dec = turbojpeg::Decompress::new().unwrap();
 
     loop {
@@ -93,18 +91,22 @@ fn render(source: SendSource, chan: mpsc::Receiver<Signal>) {
         let part_n = (chunk_buf[2] as u16) * 0xFF + chunk_buf[3] as u16;
 
         if part_n == 0 {
-            buf.clear();
+            jpeg_buf.clear();
             frame.timestamp = os_gettime_ns();
         }
 
-        buf.extend(&chunk_buf[4..]);
+        jpeg_buf.extend_from_slice(&chunk_buf[4..]);
 
         if part_n > 0x4000 {
             if let Ok(_) = chan.try_recv() {
                 break;
             }
-            let header = dec.decompress_header(&buf);
-            let dec_ret = dec.decompress(&buf, &header, pixels.as_mut_slice());
+            let header = dec.decompress_header(&jpeg_buf);
+            if header.dst_size() > pixels.len() {
+                pixels.resize(header.dst_size(), 0);
+                frame.data[0] = pixels.as_ptr() as *mut u8;
+            }
+            let dec_ret = dec.decompress(&jpeg_buf, &header, pixels.as_mut_slice());
             match dec_ret {
                 Ok(_) => {
                     frame.width = header.width as u32;
