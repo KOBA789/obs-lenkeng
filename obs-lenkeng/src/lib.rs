@@ -8,7 +8,7 @@ mod turbojpeg;
 use std::ptr::null;
 use std::os::raw::c_char;
 use std::mem;
-use std::ffi::c_void;
+use std::ffi::{c_void, CStr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::net::{UdpSocket, Ipv4Addr};
 use std::thread;
@@ -67,6 +67,7 @@ const PACKET_SIZE: usize = 1024;
 const MAX_CHUNK: usize = 1000;
 
 struct RenderWork {
+    ifaddr_string: String,
     source: SendSource,
     is_destroyed: Arc<AtomicBool>,
 }
@@ -129,7 +130,7 @@ impl RenderWork {
             .reuse_port(true).ok()?
             .bind("0.0.0.0:2068").ok()?;
         let membership: Ipv4Addr = "226.2.2.2".parse().unwrap();
-        let ifaddr: Ipv4Addr = "192.168.168.123".parse().ok()?;
+        let ifaddr: Ipv4Addr = self.ifaddr_string.parse().ok()?;
         socket.join_multicast_v4(&membership, &ifaddr).ok()?;
         Some(socket)
     }
@@ -151,13 +152,17 @@ impl Work for RenderWork {
     }
 }
 
-unsafe extern "C" fn source_create(_raw_settings: *mut libobs_sys::obs_data, source: *mut libobs_sys::obs_source) -> *mut c_void {
+unsafe extern "C" fn source_create(settings_raw: *mut libobs_sys::obs_data, source: *mut libobs_sys::obs_source) -> *mut c_void {
     let send_source = SendSource(source);
     let is_destroyed = Arc::new(AtomicBool::new(false));
+    let ifaddr_ptr = libobs_sys::obs_data_get_string(settings_raw, S_IFADDR.as_ptr() as *const i8);
+    let ifaddr_cstr = CStr::from_ptr(ifaddr_ptr);
+    let ifaddr_string = ifaddr_cstr.to_string_lossy().to_string();
 
     let is_destroyed2 = is_destroyed.clone();
     worker_sentinel::spawn(1, move || {
         RenderWork {
+            ifaddr_string: ifaddr_string.clone(),
             source: send_source.clone(),
             is_destroyed: is_destroyed2.clone(),
         }
@@ -166,6 +171,19 @@ unsafe extern "C" fn source_create(_raw_settings: *mut libobs_sys::obs_data, sou
     let ptr = Box::into_raw(Box::new(SourceData { is_destroyed }));
     println!("create LENKENG");
     return ptr as *mut c_void;
+}
+
+const S_IFADDR: &[u8] = b"ifaddr\0";
+const S_IFADDR_DEFAULT: &[u8] = b"\0";
+unsafe extern "C" fn source_get_defaults(settings_raw: *mut libobs_sys::obs_data) {
+    libobs_sys::obs_data_set_default_string(settings_raw, S_IFADDR.as_ptr() as *const i8, S_IFADDR_DEFAULT.as_ptr() as *const i8);
+}
+
+const P_IFADDR_DESCRIPTION: &[u8] = b"Interface Address\n";
+unsafe extern "C" fn source_get_properties(_data: *mut c_void) -> *mut libobs_sys::obs_properties {
+    let ppts = libobs_sys::obs_properties_create();
+    libobs_sys::obs_properties_add_text(ppts, S_IFADDR.as_ptr() as *const i8, P_IFADDR_DESCRIPTION.as_ptr() as *const i8, libobs_sys::obs_text_type_OBS_TEXT_DEFAULT);
+    return ppts;
 }
 
 unsafe extern "C" fn source_destroy(data: *mut c_void) {
@@ -184,6 +202,8 @@ pub unsafe extern "C" fn obs_module_load() -> bool
         get_name: Some(source_get_name),
         create: Some(source_create),
         destroy: Some(source_destroy),
+        get_defaults: Some(source_get_defaults),
+        get_properties: Some(source_get_properties),
         ..libobs_sys::obs_source_info::default()
     };
     libobs_sys::obs_register_source_s(
