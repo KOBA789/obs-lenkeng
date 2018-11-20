@@ -10,7 +10,7 @@ use std::os::raw::c_char;
 use std::mem;
 use std::ffi::{c_void, CStr};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::net::{UdpSocket, Ipv4Addr};
+use std::net::{UdpSocket, Ipv4Addr, SocketAddrV4};
 use std::thread;
 use std::time;
 use net2::unix::UnixUdpBuilderExt;
@@ -152,6 +152,52 @@ impl Work for RenderWork {
     }
 }
 
+const HEATBEAT_PACKET: [u8; 0x17] = [
+    0x54, 0x46, 0x36, 0x7a, 0x60, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x03, 0x01, 0x00, 0x26,
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x34, 0xc2,
+];
+const TX_ADDR: &'static str = "192.168.168.55:48689";
+struct HeatbeatWork {
+    ifaddr_string: String,
+    is_destroyed: Arc<AtomicBool>,
+}
+impl HeatbeatWork {
+    fn heatbeat(&self, socket: UdpSocket) {
+        loop {
+            if self.is_destroyed.load(Ordering::SeqCst) {
+                break;
+            }
+            socket.send_to(&HEATBEAT_PACKET, TX_ADDR).expect("failed to send heart beat");
+            thread::sleep(time::Duration::from_secs(1));
+        }
+    }
+
+    fn create_socket(&self) -> Option<UdpSocket> {
+        let ifaddr: Ipv4Addr = self.ifaddr_string.parse().ok()?;
+        let socket_addr = SocketAddrV4::new(ifaddr, 48689);
+        let socket = net2::UdpBuilder::new_v4().ok()?
+            .reuse_port(true).ok()?
+            .bind(socket_addr).ok()?;
+        Some(socket)
+    }
+
+    fn try_to_create_socket(&self) -> UdpSocket {
+        loop {
+            if let Some(socket) = self.create_socket() {
+                return socket;
+            }
+            thread::sleep(time::Duration::from_secs(1));
+        }
+    }
+}
+impl Work for HeatbeatWork {
+    fn work(self) -> Option<Self> {
+        let socket = self.try_to_create_socket();
+        self.heatbeat(socket);
+        None
+    }
+}
+
 unsafe extern "C" fn source_create(settings_raw: *mut libobs_sys::obs_data, source: *mut libobs_sys::obs_source) -> *mut c_void {
     let send_source = SendSource(source);
     let is_destroyed = Arc::new(AtomicBool::new(false));
@@ -160,11 +206,19 @@ unsafe extern "C" fn source_create(settings_raw: *mut libobs_sys::obs_data, sour
     let ifaddr_string = ifaddr_cstr.to_string_lossy().to_string();
 
     let is_destroyed2 = is_destroyed.clone();
+    let ifaddr_string2 = ifaddr_string.clone();
     worker_sentinel::spawn(1, move || {
         RenderWork {
-            ifaddr_string: ifaddr_string.clone(),
+            ifaddr_string: ifaddr_string2.clone(),
             source: send_source.clone(),
             is_destroyed: is_destroyed2.clone(),
+        }
+    });
+    let is_destroyed3 = is_destroyed.clone();
+    worker_sentinel::spawn(1, move || {
+        HeatbeatWork {
+            ifaddr_string: ifaddr_string.clone(),
+            is_destroyed: is_destroyed3.clone(),
         }
     });
 
