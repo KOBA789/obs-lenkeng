@@ -10,3 +10,5 @@ crate-type = ["cdylib"]
 [dependencies]
 libobs-sys = { path = "../libobs-sys" }
 libturbojpeg-sys = { path = "../libturbojpeg-sys" }
+net2 = "0.2"
+worker-sentinel = "0.3"
