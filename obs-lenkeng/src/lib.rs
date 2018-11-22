@@ -16,24 +16,10 @@ use std::time;
 use net2::unix::UnixUdpBuilderExt;
 use worker_sentinel::Work;
 
-static mut OBS_MODULE_POINTER: Option<*mut libobs_sys::obs_module_t> = None;
-const SOURCE_ID: &[u8] = b"lenkeng\0";
-const SOURCE_NAME: &[u8] = b"LENKENG\0";
-
-#[no_mangle]
-pub unsafe extern "C" fn obs_module_set_pointer(module: *mut libobs_sys::obs_module_t) -> () {
-    OBS_MODULE_POINTER = Some(module);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn obs_module_ver() -> u32 {
-    ((libobs_sys::LIBOBS_API_MAJOR_VER as u32) << 24)
-    | ((libobs_sys::LIBOBS_API_MINOR_VER as u32) << 16)
-    | libobs_sys::LIBOBS_API_PATCH_VER as u32
-}
-
-unsafe extern "C" fn source_get_name(_data: *mut c_void) -> *const c_char {
-    return SOURCE_NAME.as_ptr() as *const c_char;
+fn os_gettime_ns() -> u64 {
+    unsafe {
+        libobs_sys::os_gettime_ns()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -50,12 +36,6 @@ impl SendSource {
         unsafe {
             libobs_sys::obs_source_output_video(self.0, frame);
         }
-    }
-}
-
-fn os_gettime_ns() -> u64 {
-    unsafe {
-        libobs_sys::os_gettime_ns()
     }
 }
 
@@ -196,6 +176,26 @@ impl Work for HeatbeatWork {
         self.heatbeat(socket);
         None
     }
+}
+
+static mut OBS_MODULE_POINTER: Option<*mut libobs_sys::obs_module_t> = None;
+const SOURCE_ID: &[u8] = b"lenkeng\0";
+const SOURCE_NAME: &[u8] = b"LENKENG\0";
+
+#[no_mangle]
+pub unsafe extern "C" fn obs_module_set_pointer(module: *mut libobs_sys::obs_module_t) -> () {
+    OBS_MODULE_POINTER = Some(module);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn obs_module_ver() -> u32 {
+    ((libobs_sys::LIBOBS_API_MAJOR_VER as u32) << 24)
+    | ((libobs_sys::LIBOBS_API_MINOR_VER as u32) << 16)
+    | libobs_sys::LIBOBS_API_PATCH_VER as u32
+}
+
+unsafe extern "C" fn source_get_name(_data: *mut c_void) -> *const c_char {
+    return SOURCE_NAME.as_ptr() as *const c_char;
 }
 
 unsafe extern "C" fn source_create(settings_raw: *mut libobs_sys::obs_data, source: *mut libobs_sys::obs_source) -> *mut c_void {
